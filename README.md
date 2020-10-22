@@ -1,0 +1,16 @@
+# imgcat
+
+Tool to output images in the terminal. Built with [bubbletea](https://github.com/charmbracelet/bubbletea)
+
+## install
+
+```
+go get github.com/trashhalo/imgcat
+```
+
+## sample output
+```
+imgcat https://i.redd.it/65fmdbh1ja951.jpg
+```
+
+![sample](./sample.png)
