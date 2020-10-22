@@ -14,3 +14,12 @@ imgcat https://i.redd.it/65fmdbh1ja951.jpg
 ```
 
 ![sample](./sample.png)
+
+## files on disk
+
+```
+imgcat *.jpg
+```
+
+- j, down: next image
+- k, up: previous image
