@@ -20,6 +20,12 @@ Prebuilt packages can be found at the [releases page](https://github.com/trashha
 go get github.com/trashhalo/imgcat
 ```
 
+### aur
+
+```
+yay -S imgcat
+```
+
 ## sample output
 ```
 imgcat https://i.redd.it/65fmdbh1ja951.jpg
