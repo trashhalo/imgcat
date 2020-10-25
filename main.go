@@ -16,13 +16,30 @@ import (
 	"github.com/nfnt/resize"
 )
 
+const usage = `imgcat [pattern|url]
+
+Examples:
+    imgcat path/to/image.jpg
+    imgcat *.jpg
+    imgcat https://example.com/image.jpg`
+
 func main() {
+	if len(os.Args) == 1 {
+		fmt.Println(usage)
+		os.Exit(1)
+	}
+
+	if os.Args[1] == "-h" || os.Args[1] == "--help" {
+		fmt.Println(usage)
+		os.Exit(0)
+	}
+
 	p := tea.NewProgram(model{urls: os.Args[1:len(os.Args)]})
 	p.EnterAltScreen()
-	err := p.Start()
-	p.ExitAltScreen()
-	if err != nil {
-		panic(err)
+	defer p.ExitAltScreen()
+	if err := p.Start(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }
 
@@ -33,6 +50,7 @@ type model struct {
 	urls     []string
 	image    string
 	height   uint
+	err      error
 }
 
 func (m model) Init() tea.Cmd {
@@ -40,6 +58,12 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.err != nil {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return m, tea.Quit
+		}
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.height = uint(msg.Height)
@@ -64,7 +88,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, load(m.urls[m.selected])
 		}
 	case errMsg:
-		m.image = msg.Error()
+		m.err = msg
 		return m, nil
 	case loadMsg:
 		url := m.urls[m.selected]
@@ -72,7 +96,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			defer msg.resp.Body.Close()
 			img, err := readerToImage(m.height, url, msg.resp.Body)
 			if err != nil {
-				return m, func() tea.Msg { return errMsg(err) }
+				return m, func() tea.Msg { return errMsg{err} }
 			}
 			m.image = img
 			return m, nil
@@ -80,7 +104,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		defer msg.file.Close()
 		img, err := readerToImage(m.height, url, msg.file)
 		if err != nil {
-			return m, func() tea.Msg { return errMsg(err) }
+			return m, func() tea.Msg { return errMsg{err} }
 		}
 		m.image = img
 		return m, nil
@@ -89,6 +113,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	if m.err != nil {
+		return fmt.Sprintf("couldn't load image(s): %v\n\npress any key to exit", m.err)
+	}
 	if m.image == "" {
 		return fmt.Sprintf("loading %s %s", m.urls[m.selected], sparkles)
 	}
@@ -100,14 +127,14 @@ type loadMsg struct {
 	file *os.File
 }
 
-type errMsg error
+type errMsg struct{ error }
 
 func load(url string) tea.Cmd {
 	if strings.HasPrefix(url, "http") {
 		return func() tea.Msg {
 			resp, err := http.Get(url)
 			if err != nil {
-				return errMsg(err)
+				return errMsg{err}
 			}
 			return loadMsg{resp: resp}
 		}
@@ -115,7 +142,7 @@ func load(url string) tea.Cmd {
 	return func() tea.Msg {
 		file, err := os.Open(url)
 		if err != nil {
-			return errMsg(err)
+			return errMsg{err}
 		}
 		return loadMsg{file: file}
 	}
