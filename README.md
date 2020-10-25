@@ -16,6 +16,12 @@ brew install trashhalo/homebrew-brews/imgcat
 go get github.com/trashhalo/imgcat
 ```
 
+### aur
+
+```
+yay -S imgcat
+```
+
 ## sample output
 ```
 imgcat https://i.redd.it/65fmdbh1ja951.jpg
