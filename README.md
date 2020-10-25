@@ -4,13 +4,13 @@ Tool to output images in the terminal. Built with [bubbletea](https://github.com
 
 ## install
 
-### Homebrew
+### homebrew
 
 ```
 brew install trashhalo/homebrew-brews/imgcat
 ```
 
-### Golang
+### golang
 
 ```
 go get github.com/trashhalo/imgcat
