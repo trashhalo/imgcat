@@ -32,14 +32,18 @@ type model struct {
 	selected int
 	urls     []string
 	image    string
+	height   uint
 }
 
 func (m model) Init() tea.Cmd {
-	return load(m.urls[m.selected])
+	return nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.height = uint(msg.Height)
+		return m, load(m.urls[m.selected])
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -66,7 +70,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		url := m.urls[m.selected]
 		if msg.resp != nil {
 			defer msg.resp.Body.Close()
-			img, err := readerToImage(url, msg.resp.Body)
+			img, err := readerToImage(m.height, url, msg.resp.Body)
 			if err != nil {
 				return m, func() tea.Msg { return errMsg(err) }
 			}
@@ -74,7 +78,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		defer msg.file.Close()
-		img, err := readerToImage(url, msg.file)
+		img, err := readerToImage(m.height, url, msg.file)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg(err) }
 		}
@@ -117,24 +121,27 @@ func load(url string) tea.Cmd {
 	}
 }
 
-func readerToImage(url string, r io.Reader) (string, error) {
+func readerToImage(height uint, url string, r io.Reader) (string, error) {
 	img, _, err := image.Decode(r)
 	if err != nil {
 		return "", err
 	}
 
-	img = resize.Resize(50, 0, img, resize.Lanczos3)
+	img = resize.Resize(0, height*2, img, resize.Lanczos3)
 	b := img.Bounds()
 	w := b.Max.X
 	h := b.Max.Y
 	p := termenv.ColorProfile()
 	str := strings.Builder{}
-	for y := 0; y < h; y++ {
+	for y := 0; y < h; y += 2 {
 		for x := 0; x < w; x++ {
-			c, _ := colorful.MakeColor(img.At(x, y))
-			color := p.Color(c.Hex())
-			str.WriteString(termenv.String("  ").
-				Background(color).
+			c1, _ := colorful.MakeColor(img.At(x, y))
+			color1 := p.Color(c1.Hex())
+			c2, _ := colorful.MakeColor(img.At(x, y+1))
+			color2 := p.Color(c2.Hex())
+			str.WriteString(termenv.String("▀").
+				Foreground(color1).
+				Background(color2).
 				String())
 		}
 		str.WriteString("\n")
