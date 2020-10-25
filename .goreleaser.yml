@@ -30,3 +30,12 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+brews:
+  - tap:
+      owner: trashhalo
+      name: homebrew-brews
+    folder: Formula
+    homepage: https://github.com/trashhalo/imgcat
+    description: Tool to output images in the terminal
+    test: |
+      system "#{bin}/imgcat"
