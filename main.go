@@ -49,6 +49,7 @@ type model struct {
 	selected int
 	urls     []string
 	image    string
+	width    uint
 	height   uint
 	err      error
 }
@@ -66,6 +67,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.width = uint(msg.Width)
 		m.height = uint(msg.Height)
 		return m, load(m.urls[m.selected])
 	case tea.KeyMsg:
@@ -94,7 +96,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		url := m.urls[m.selected]
 		if msg.resp != nil {
 			defer msg.resp.Body.Close()
-			img, err := readerToImage(m.height, url, msg.resp.Body)
+			img, err := readerToImage(m.width, m.height, url, msg.resp.Body)
 			if err != nil {
 				return m, func() tea.Msg { return errMsg{err} }
 			}
@@ -102,7 +104,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		defer msg.file.Close()
-		img, err := readerToImage(m.height, url, msg.file)
+		img, err := readerToImage(m.width, m.height, url, msg.file)
 		if err != nil {
 			return m, func() tea.Msg { return errMsg{err} }
 		}
@@ -148,19 +150,22 @@ func load(url string) tea.Cmd {
 	}
 }
 
-func readerToImage(height uint, url string, r io.Reader) (string, error) {
+func readerToImage(width uint, height uint, url string, r io.Reader) (string, error) {
 	img, _, err := image.Decode(r)
 	if err != nil {
 		return "", err
 	}
 
-	img = resize.Resize(0, height*2, img, resize.Lanczos3)
+	img = resize.Thumbnail(width, height*2, img, resize.Lanczos3)
 	b := img.Bounds()
 	w := b.Max.X
 	h := b.Max.Y
 	p := termenv.ColorProfile()
 	str := strings.Builder{}
 	for y := 0; y < h; y += 2 {
+		for x := w; x < int(width); x = x + 2 {
+			str.WriteString(" ")
+		}
 		for x := 0; x < w; x++ {
 			c1, _ := colorful.MakeColor(img.At(x, y))
 			color1 := p.Color(c1.Hex())
