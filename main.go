@@ -16,6 +16,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/disintegration/imageorient"
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/muesli/termenv"
 	"github.com/nfnt/resize"
@@ -250,7 +251,7 @@ func load(url string) tea.Cmd {
 }
 
 func readerToImage(width uint, height uint, url string, r io.Reader) (string, error) {
-	img, _, err := image.Decode(r)
+	img, _, err := imageorient.Decode(r)
 	if err != nil {
 		return "", err
 	}
