@@ -54,6 +54,7 @@ type model struct {
 	selected int
 	urls     []string
 	image    string
+	width    uint
 	height   uint
 	err      error
 
@@ -73,6 +74,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.width = uint(msg.Width)
 		m.height = uint(msg.Height)
 		return m, load(m.urls[m.selected])
 	case tea.KeyMsg:
@@ -123,7 +125,6 @@ func handleGifMsg(m model, msg gifMsg) (model, tea.Cmd) {
 				frame:  nextFrame,
 			}
 		}
-
 	}
 }
 
@@ -148,7 +149,7 @@ func handleLoadMsgStatic(m model, msg loadMsg) (model, tea.Cmd) {
 	defer msg.Close()
 	r := msg.Reader()
 	url := m.urls[m.selected]
-	img, err := readerToImage(m.height, url, r)
+	img, err := readerToImage(m.width, m.height, url, r)
 	if err != nil {
 		return m, func() tea.Msg { return errMsg{err} }
 	}
@@ -173,7 +174,7 @@ func handleLoadMsgAnimation(m model, msg loadMsg) (model, tea.Cmd) {
 	// precompute the frames for performance reasons
 	var frames []string
 	for _, img := range gimg.Image {
-		str, err := imageToString(m.height, m.urls[m.selected], img)
+		str, err := imageToString(m.width, m.height, m.urls[m.selected], img)
 		if err != nil {
 			return m, wrapErrCmd(err)
 		}
@@ -248,23 +249,26 @@ func load(url string) tea.Cmd {
 	}
 }
 
-func readerToImage(height uint, url string, r io.Reader) (string, error) {
+func readerToImage(width uint, height uint, url string, r io.Reader) (string, error) {
 	img, _, err := image.Decode(r)
 	if err != nil {
 		return "", err
 	}
 
-	return imageToString(height, url, img)
+	return imageToString(width, height, url, img)
 }
 
-func imageToString(height uint, url string, img image.Image) (string, error) {
-	img = resize.Resize(0, height*2, img, resize.Lanczos3)
+func imageToString(width, height uint, url string, img image.Image) (string, error) {
+	img = resize.Thumbnail(width, height*2, img, resize.Lanczos3)
 	b := img.Bounds()
 	w := b.Max.X
 	h := b.Max.Y
 	p := termenv.ColorProfile()
 	str := strings.Builder{}
 	for y := 0; y < h; y += 2 {
+		for x := w; x < int(width); x = x + 2 {
+			str.WriteString(" ")
+		}
 		for x := 0; x < w; x++ {
 			c1, _ := colorful.MakeColor(img.At(x, y))
 			color1 := p.Color(c1.Hex())

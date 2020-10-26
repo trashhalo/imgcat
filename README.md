@@ -10,10 +10,20 @@ Tool to output images in the terminal. Built with [bubbletea](https://github.com
 brew install trashhalo/homebrew-brews/imgcat
 ```
 
+### prebuilt packages
+
+Prebuilt packages can be found at the [releases page](https://github.com/trashhalo/imgcat/releases)
+
 ### golang
 
 ```
 go get github.com/trashhalo/imgcat
+```
+
+### aur
+
+```
+yay -S imgcat
 ```
 
 ## sample output
