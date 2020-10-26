@@ -41,3 +41,7 @@ imgcat *.jpg
 
 - j, down: next image
 - k, up: previous image
+
+## gifs
+
+imgcat supports gifs and yes they will animate on your terminal. The quality of that animation seems largely dependant on your terminal. [Kitty](https://sw.kovidgoyal.net/kitty/#) runs them best. 
