@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"image"
+	"image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lucasb-eyer/go-colorful"
@@ -52,6 +57,8 @@ type model struct {
 	width    uint
 	height   uint
 	err      error
+
+	cancelAnimation context.CancelFunc
 }
 
 func (m model) Init() tea.Cmd {
@@ -93,25 +100,99 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg
 		return m, nil
 	case loadMsg:
-		url := m.urls[m.selected]
-		if msg.resp != nil {
-			defer msg.resp.Body.Close()
-			img, err := readerToImage(m.width, m.height, url, msg.resp.Body)
-			if err != nil {
-				return m, func() tea.Msg { return errMsg{err} }
-			}
-			m.image = img
-			return m, nil
-		}
-		defer msg.file.Close()
-		img, err := readerToImage(m.width, m.height, url, msg.file)
-		if err != nil {
-			return m, func() tea.Msg { return errMsg{err} }
-		}
-		m.image = img
-		return m, nil
+		return handleLoadMsg(m, msg)
+	case gifMsg:
+		return handleGifMsg(m, msg)
 	}
 	return m, nil
+}
+
+func handleGifMsg(m model, msg gifMsg) (model, tea.Cmd) {
+	m.image = msg.frames[msg.frame]
+	return m, func() tea.Msg {
+		nextFrame := msg.frame + 1
+		if nextFrame == len(msg.gif.Image) {
+			nextFrame = 0
+		}
+		select {
+		case <-msg.ctx.Done():
+			return nil
+		case <-time.After(time.Duration(msg.gif.Delay[nextFrame]*10) * time.Millisecond):
+			return gifMsg{
+				ctx:    msg.ctx,
+				gif:    msg.gif,
+				frames: msg.frames,
+				frame:  nextFrame,
+			}
+		}
+	}
+}
+
+func handleLoadMsg(m model, msg loadMsg) (model, tea.Cmd) {
+	if m.cancelAnimation != nil {
+		m.cancelAnimation()
+	}
+
+	// blank out image so it says "loading..."
+	m.image = ""
+
+	selected := m.urls[m.selected]
+	ext := filepath.Ext(selected)
+	t := mime.TypeByExtension(ext)
+	if strings.Contains(t, "gif") {
+		return handleLoadMsgAnimation(m, msg)
+	}
+	return handleLoadMsgStatic(m, msg)
+}
+
+func handleLoadMsgStatic(m model, msg loadMsg) (model, tea.Cmd) {
+	defer msg.Close()
+	r := msg.Reader()
+	url := m.urls[m.selected]
+	img, err := readerToImage(m.width, m.height, url, r)
+	if err != nil {
+		return m, func() tea.Msg { return errMsg{err} }
+	}
+	m.image = img
+	return m, nil
+}
+
+func handleLoadMsgAnimation(m model, msg loadMsg) (model, tea.Cmd) {
+	defer msg.Close()
+	r := msg.Reader()
+
+	// decode the gif
+	gimg, err := gif.DecodeAll(r)
+	if err != nil {
+		return m, wrapErrCmd(err)
+	}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	m.cancelAnimation = cancel
+
+	// precompute the frames for performance reasons
+	var frames []string
+	for _, img := range gimg.Image {
+		str, err := imageToString(m.width, m.height, m.urls[m.selected], img)
+		if err != nil {
+			return m, wrapErrCmd(err)
+		}
+		frames = append(frames, str)
+	}
+
+	return m, func() tea.Msg {
+		return gifMsg{
+			gif:    gimg,
+			frames: frames,
+			frame:  0,
+			ctx:    ctx,
+		}
+	}
+}
+
+func wrapErrCmd(err error) tea.Cmd {
+	return func() tea.Msg { return errMsg{err} }
 }
 
 func (m model) View() string {
@@ -124,9 +205,27 @@ func (m model) View() string {
 	return m.image
 }
 
+type gifMsg struct {
+	gif    *gif.GIF
+	frame  int
+	frames []string
+	ctx    context.Context
+}
+
 type loadMsg struct {
 	resp *http.Response
 	file *os.File
+}
+
+func (l loadMsg) Reader() io.ReadCloser {
+	if l.resp != nil {
+		return l.resp.Body
+	}
+	return l.file
+}
+
+func (l loadMsg) Close() {
+	l.Reader().Close()
 }
 
 type errMsg struct{ error }
@@ -156,6 +255,10 @@ func readerToImage(width uint, height uint, url string, r io.Reader) (string, er
 		return "", err
 	}
 
+	return imageToString(width, height, url, img)
+}
+
+func imageToString(width, height uint, url string, img image.Image) (string, error) {
 	img = resize.Thumbnail(width, height*2, img, resize.Lanczos3)
 	b := img.Bounds()
 	w := b.Max.X
