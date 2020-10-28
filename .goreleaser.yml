@@ -13,6 +13,7 @@ builds:
       - linux
       - windows
       - darwin
+    dir: ./cmd/imgcat
 archives:
   - replacements:
       darwin: Darwin
