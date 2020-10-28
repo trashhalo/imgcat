@@ -14,12 +14,6 @@ brew install trashhalo/homebrew-brews/imgcat
 
 Prebuilt packages can be found at the [releases page](https://github.com/trashhalo/imgcat/releases)
 
-### golang
-
-```
-go get github.com/trashhalo/imgcat
-```
-
 ### aur
 
 ```
