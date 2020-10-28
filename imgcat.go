@@ -1,4 +1,4 @@
-package main
+package imgcat
 
 import (
 	"context"
@@ -22,36 +22,9 @@ import (
 	"github.com/nfnt/resize"
 )
 
-const usage = `imgcat [pattern|url]
-
-Examples:
-    imgcat path/to/image.jpg
-    imgcat *.jpg
-    imgcat https://example.com/image.jpg`
-
-func main() {
-	if len(os.Args) == 1 {
-		fmt.Println(usage)
-		os.Exit(1)
-	}
-
-	if os.Args[1] == "-h" || os.Args[1] == "--help" {
-		fmt.Println(usage)
-		os.Exit(0)
-	}
-
-	p := tea.NewProgram(model{urls: os.Args[1:len(os.Args)]})
-	p.EnterAltScreen()
-	defer p.ExitAltScreen()
-	if err := p.Start(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-}
-
 const sparkles = "✨"
 
-type model struct {
+type Model struct {
 	selected int
 	urls     []string
 	image    string
@@ -62,11 +35,15 @@ type model struct {
 	cancelAnimation context.CancelFunc
 }
 
-func (m model) Init() tea.Cmd {
+func NewModel(urls []string) Model {
+	return Model{urls: urls}
+}
+
+func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.err != nil {
 		if _, ok := msg.(tea.KeyMsg); ok {
 			return m, tea.Quit
@@ -108,7 +85,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func handleGifMsg(m model, msg gifMsg) (model, tea.Cmd) {
+func handleGifMsg(m Model, msg gifMsg) (Model, tea.Cmd) {
 	m.image = msg.frames[msg.frame]
 	return m, func() tea.Msg {
 		nextFrame := msg.frame + 1
@@ -129,7 +106,7 @@ func handleGifMsg(m model, msg gifMsg) (model, tea.Cmd) {
 	}
 }
 
-func handleLoadMsg(m model, msg loadMsg) (model, tea.Cmd) {
+func handleLoadMsg(m Model, msg loadMsg) (Model, tea.Cmd) {
 	if m.cancelAnimation != nil {
 		m.cancelAnimation()
 	}
@@ -146,7 +123,7 @@ func handleLoadMsg(m model, msg loadMsg) (model, tea.Cmd) {
 	return handleLoadMsgStatic(m, msg)
 }
 
-func handleLoadMsgStatic(m model, msg loadMsg) (model, tea.Cmd) {
+func handleLoadMsgStatic(m Model, msg loadMsg) (Model, tea.Cmd) {
 	defer msg.Close()
 	r := msg.Reader()
 	url := m.urls[m.selected]
@@ -158,7 +135,7 @@ func handleLoadMsgStatic(m model, msg loadMsg) (model, tea.Cmd) {
 	return m, nil
 }
 
-func handleLoadMsgAnimation(m model, msg loadMsg) (model, tea.Cmd) {
+func handleLoadMsgAnimation(m Model, msg loadMsg) (Model, tea.Cmd) {
 	defer msg.Close()
 	r := msg.Reader()
 
@@ -196,7 +173,7 @@ func wrapErrCmd(err error) tea.Cmd {
 	return func() tea.Msg { return errMsg{err} }
 }
 
-func (m model) View() string {
+func (m Model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("couldn't load image(s): %v\n\npress any key to exit", m.err)
 	}
