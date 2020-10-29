@@ -1,4 +1,4 @@
-package imgcat
+package lib
 
 import (
 	"context"
@@ -7,26 +7,18 @@ import (
 	"image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"io"
-	"mime"
-	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/disintegration/imageorient"
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/muesli/termenv"
 	"github.com/nfnt/resize"
 )
 
-const sparkles = "✨"
-
 type Model struct {
 	selected int
-	urls     []string
+	entries  []ImageLoader
 	image    string
 	width    uint
 	height   uint
@@ -35,8 +27,36 @@ type Model struct {
 	cancelAnimation context.CancelFunc
 }
 
-func NewModel(urls []string) Model {
-	return Model{urls: urls}
+type ImageLoader interface {
+	Image() (image.Image, error)
+}
+
+type GifLoader interface {
+	ImageLoader
+	Gif() (*gif.GIF, error)
+}
+
+// LoadingMsg implement this interface in your ImageLoader if you want to set a loading message which will be displayed
+// before Image() or Gif() (from GifLoader) have returned.
+type LoadingMsg interface {
+	LoadingMsg() string
+}
+
+// FooterMsg implement this interface in your ImageLoader if you want to set a footer message below the displayed image
+type FooterMsg interface {
+	Footer() string
+}
+
+func NewModel() Model {
+	return Model{}
+}
+
+func (m *Model) AddImage(img image.Image) {
+	m.entries = append(m.entries, &staticImage{img})
+}
+
+func (m *Model) AddImageLoader(img ImageLoader) {
+	m.entries = append(m.entries, img)
 }
 
 func (m Model) Init() tea.Cmd {
@@ -54,30 +74,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = uint(msg.Width)
 		m.height = uint(msg.Height)
-		return m, load(m.urls[m.selected])
+		return m, load(m.entries[m.selected])
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "j", "down":
-			if m.selected+1 != len(m.urls) {
+			if m.selected+1 != len(m.entries) {
 				m.selected++
 			} else {
 				m.selected = 0
 			}
-			return m, load(m.urls[m.selected])
+			return m, load(m.entries[m.selected])
 		case "k", "up":
 			if m.selected-1 != -1 {
 				m.selected--
 			} else {
-				m.selected = len(m.urls) - 1
+				m.selected = len(m.entries) - 1
 			}
-			return m, load(m.urls[m.selected])
+			return m, load(m.entries[m.selected])
 		}
 	case errMsg:
 		m.err = msg
 		return m, nil
-	case loadMsg:
+	case ImageLoader:
 		return handleLoadMsg(m, msg)
 	case gifMsg:
 		return handleGifMsg(m, msg)
@@ -106,7 +126,7 @@ func handleGifMsg(m Model, msg gifMsg) (Model, tea.Cmd) {
 	}
 }
 
-func handleLoadMsg(m Model, msg loadMsg) (Model, tea.Cmd) {
+func handleLoadMsg(m Model, loader ImageLoader) (Model, tea.Cmd) {
 	if m.cancelAnimation != nil {
 		m.cancelAnimation()
 	}
@@ -114,59 +134,42 @@ func handleLoadMsg(m Model, msg loadMsg) (Model, tea.Cmd) {
 	// blank out image so it says "loading..."
 	m.image = ""
 
-	selected := m.urls[m.selected]
-	ext := filepath.Ext(selected)
-	t := mime.TypeByExtension(ext)
-	if strings.Contains(t, "gif") {
-		return handleLoadMsgAnimation(m, msg)
+	// if our loader is implementing GifLoader and Gif() actually returns
+	// non-nil we will use the gif handler, otherwise we'll use the static
+	// image solution
+	if gifl, ok := loader.(GifLoader); ok {
+		gimg, err := gifl.Gif()
+		if err != nil {
+			return m, wrapErrCmd(err)
+		} else if gimg != nil {
+			ctx := context.Background()
+			ctx, cancel := context.WithCancel(ctx)
+			m.cancelAnimation = cancel
+
+			// precompute the frames for performance reasons
+			var frames []string
+			for _, img := range gimg.Image {
+				str := imageToString(m.width, m.height, img, loader)
+				frames = append(frames, str)
+			}
+
+			return m, func() tea.Msg {
+				return gifMsg{
+					gif:    gimg,
+					frames: frames,
+					frame:  0,
+					ctx:    ctx,
+				}
+			}
+		}
 	}
-	return handleLoadMsgStatic(m, msg)
-}
 
-func handleLoadMsgStatic(m Model, msg loadMsg) (Model, tea.Cmd) {
-	defer msg.Close()
-	r := msg.Reader()
-	url := m.urls[m.selected]
-	img, err := readerToImage(m.width, m.height, url, r)
-	if err != nil {
-		return m, func() tea.Msg { return errMsg{err} }
-	}
-	m.image = img
-	return m, nil
-}
-
-func handleLoadMsgAnimation(m Model, msg loadMsg) (Model, tea.Cmd) {
-	defer msg.Close()
-	r := msg.Reader()
-
-	// decode the gif
-	gimg, err := gif.DecodeAll(r)
+	img, err := loader.Image()
 	if err != nil {
 		return m, wrapErrCmd(err)
 	}
-
-	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
-	m.cancelAnimation = cancel
-
-	// precompute the frames for performance reasons
-	var frames []string
-	for _, img := range gimg.Image {
-		str, err := imageToString(m.width, m.height, m.urls[m.selected], img)
-		if err != nil {
-			return m, wrapErrCmd(err)
-		}
-		frames = append(frames, str)
-	}
-
-	return m, func() tea.Msg {
-		return gifMsg{
-			gif:    gimg,
-			frames: frames,
-			frame:  0,
-			ctx:    ctx,
-		}
-	}
+	m.image = imageToString(m.width, m.height, img, loader)
+	return m, nil
 }
 
 func wrapErrCmd(err error) tea.Cmd {
@@ -178,7 +181,11 @@ func (m Model) View() string {
 		return fmt.Sprintf("couldn't load image(s): %v\n\npress any key to exit", m.err)
 	}
 	if m.image == "" {
-		return fmt.Sprintf("loading %s %s", m.urls[m.selected], sparkles)
+		entry := m.entries[m.selected]
+		if loading, ok := entry.(LoadingMsg); ok {
+			return loading.LoadingMsg()
+		}
+		return ""
 	}
 	return m.image
 }
@@ -190,53 +197,15 @@ type gifMsg struct {
 	ctx    context.Context
 }
 
-type loadMsg struct {
-	resp *http.Response
-	file *os.File
-}
-
-func (l loadMsg) Reader() io.ReadCloser {
-	if l.resp != nil {
-		return l.resp.Body
-	}
-	return l.file
-}
-
-func (l loadMsg) Close() {
-	l.Reader().Close()
-}
-
 type errMsg struct{ error }
 
-func load(url string) tea.Cmd {
-	if strings.HasPrefix(url, "http") {
-		return func() tea.Msg {
-			resp, err := http.Get(url)
-			if err != nil {
-				return errMsg{err}
-			}
-			return loadMsg{resp: resp}
-		}
-	}
+func load(img ImageLoader) tea.Cmd {
 	return func() tea.Msg {
-		file, err := os.Open(url)
-		if err != nil {
-			return errMsg{err}
-		}
-		return loadMsg{file: file}
+		return img
 	}
 }
 
-func readerToImage(width uint, height uint, url string, r io.Reader) (string, error) {
-	img, _, err := imageorient.Decode(r)
-	if err != nil {
-		return "", err
-	}
-
-	return imageToString(width, height, url, img)
-}
-
-func imageToString(width, height uint, url string, img image.Image) (string, error) {
+func imageToString(width, height uint, img image.Image, loader ImageLoader) string {
 	img = resize.Thumbnail(width, height*2-4, img, resize.Lanczos3)
 	b := img.Bounds()
 	w := b.Max.X
@@ -259,6 +228,10 @@ func imageToString(width, height uint, url string, img image.Image) (string, err
 		}
 		str.WriteString("\n")
 	}
-	str.WriteString(fmt.Sprintf("q to quit | %s\n", url))
-	return str.String(), nil
+	str.WriteString("q to quit")
+	if footer, ok := loader.(FooterMsg); ok {
+		str.WriteString(fmt.Sprintf(" | %s", footer.Footer()))
+	}
+	str.WriteString("\n")
+	return str.String()
 }

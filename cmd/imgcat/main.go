@@ -3,9 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/trashhalo/imgcat"
+	imgcat "github.com/trashhalo/imgcat/lib"
 )
 
 const usage = `imgcat [pattern|url]
@@ -26,7 +27,17 @@ func main() {
 		os.Exit(0)
 	}
 
-	p := tea.NewProgram(imgcat.NewModel(os.Args[1:len(os.Args)]))
+	m := imgcat.NewModel()
+
+	for _, uri := range os.Args[1:len(os.Args)] {
+		if strings.HasPrefix(uri, "http") {
+			m.AddImageLoader(imgcat.HttpImage{URL: uri})
+		} else {
+			m.AddImageLoader(imgcat.FileImage{Filename: uri})
+		}
+	}
+
+	p := tea.NewProgram(m)
 	p.EnterAltScreen()
 	defer p.ExitAltScreen()
 	if err := p.Start(); err != nil {
