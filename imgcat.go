@@ -54,7 +54,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = uint(msg.Width)
 		m.height = uint(msg.Height)
-		return m, load(m.urls[m.selected])
+		return m, loadUrl(m.urls[m.selected])
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -65,14 +65,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.selected = 0
 			}
-			return m, load(m.urls[m.selected])
+			return m, loadUrl(m.urls[m.selected])
 		case "k", "up":
 			if m.selected-1 != -1 {
 				m.selected--
 			} else {
 				m.selected = len(m.urls) - 1
 			}
-			return m, load(m.urls[m.selected])
+			return m, loadUrl(m.urls[m.selected])
 		}
 	case errMsg:
 		m.err = msg
@@ -125,9 +125,9 @@ func handleLoadMsg(m Model, msg loadMsg) (Model, tea.Cmd) {
 
 func handleLoadMsgStatic(m Model, msg loadMsg) (Model, tea.Cmd) {
 	defer msg.Close()
-	r := msg.Reader()
+
 	url := m.urls[m.selected]
-	img, err := readerToImage(m.width, m.height, url, r)
+	img, err := readerToImage(m.width, m.height, url, msg)
 	if err != nil {
 		return m, func() tea.Msg { return errMsg{err} }
 	}
@@ -137,10 +137,9 @@ func handleLoadMsgStatic(m Model, msg loadMsg) (Model, tea.Cmd) {
 
 func handleLoadMsgAnimation(m Model, msg loadMsg) (Model, tea.Cmd) {
 	defer msg.Close()
-	r := msg.Reader()
 
 	// decode the gif
-	gimg, err := gif.DecodeAll(r)
+	gimg, err := gif.DecodeAll(msg)
 	if err != nil {
 		return m, wrapErrCmd(err)
 	}
@@ -191,40 +190,36 @@ type gifMsg struct {
 }
 
 type loadMsg struct {
-	resp *http.Response
-	file *os.File
-}
-
-func (l loadMsg) Reader() io.ReadCloser {
-	if l.resp != nil {
-		return l.resp.Body
-	}
-	return l.file
-}
-
-func (l loadMsg) Close() {
-	l.Reader().Close()
+	io.ReadCloser
 }
 
 type errMsg struct{ error }
 
-func load(url string) tea.Cmd {
-	if strings.HasPrefix(url, "http") {
-		return func() tea.Msg {
-			resp, err := http.Get(url)
-			if err != nil {
-				return errMsg{err}
-			}
-			return loadMsg{resp: resp}
-		}
-	}
+func load(r io.ReadCloser) tea.Cmd {
 	return func() tea.Msg {
-		file, err := os.Open(url)
-		if err != nil {
+		return loadMsg{r}
+	}
+}
+
+func loadUrl(url string) tea.Cmd {
+	var r io.ReadCloser
+	var err error
+
+	if strings.HasPrefix(url, "http") {
+		var resp *http.Response
+		resp, err = http.Get(url)
+		r = resp.Body
+	} else {
+		r, err = os.Open(url)
+	}
+
+	if err != nil {
+		return func() tea.Msg {
 			return errMsg{err}
 		}
-		return loadMsg{file: file}
 	}
+
+	return load(r)
 }
 
 func readerToImage(width uint, height uint, url string, r io.Reader) (string, error) {
