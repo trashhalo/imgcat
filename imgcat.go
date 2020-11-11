@@ -9,6 +9,7 @@ import (
 	"image/png"
 	_ "image/png"
 	"io"
+	"io/ioutil"
 	"mime"
 	"net/http"
 	"os"
@@ -235,37 +236,50 @@ func load(url string) tea.Cmd {
 func svgToImage(width uint, height uint, url string, r io.Reader) (string, error) {
 	// Original author: https://stackoverflow.com/users/10826783/usual-human
 	// https://stackoverflow.com/questions/42993407/how-to-create-and-export-svg-to-png-jpeg-in-golang
-	tempPng := "imgcat-tmp.png"
+	// Adapted to use size from SVG, and to use temp file.
 
+	svgFilename := filepath.Base(url)
+	if svgFilename == "" || strings.Contains(svgFilename, "/") || strings.Contains(svgFilename, "\\") {
+		// TempFile() does not like path separators in the filename template.
+		// Should not happen, but use this as fallback just in case.
+		svgFilename = "image.svg"
+	}
+
+	tmpPngFile, err := ioutil.TempFile("", "*."+svgFilename+".png")
+	if err != nil {
+		return "", err
+	}
+	tmpPngPath := tmpPngFile.Name()
+	defer os.Remove(tmpPngPath)
+	defer tmpPngFile.Close()
+
+	// Rasterize the SVG:
 	icon, err := oksvg.ReadIconStream(r)
 	if err != nil {
 		return "", err
 	}
-	//w := int(width)
-	//h := int(height)
 	w := int(icon.ViewBox.W)
 	h := int(icon.ViewBox.H)
 	icon.SetTarget(0, 0, float64(w), float64(h))
 	rgba := image.NewRGBA(image.Rect(0, 0, w, h))
 	icon.Draw(rasterx.NewDasher(w, h, rasterx.NewScannerGV(w, h, rgba, rgba.Bounds())), 1)
-	out, err := os.Create(tempPng)
+	// Write rasterized image as PNG:
+	err = png.Encode(tmpPngFile, rgba)
 	if err != nil {
+		tmpPngFile.Close()
 		return "", err
 	}
-	err = png.Encode(out, rgba)
-	if err != nil {
-		out.Close()
-		return "", err
-	}
-	out.Close()
+	tmpPngFile.Close()
 
-	rPng, err := os.Open(tempPng)
+	rPng, err := os.Open(tmpPngPath)
 	if err != nil {
 		return "", err
 	}
-
 	defer rPng.Close()
-	return readerToImage(width, height, tempPng, rPng)
+	if !strings.HasSuffix(tmpPngPath, ".png") {
+		return "", fmt.Errorf("Unexpected temp PNG path: %s. Bailing out to avoid infinite loop.", tmpPngPath)
+	}
+	return readerToImage(width, height, tmpPngPath, rPng)
 }
 
 func readerToImage(width uint, height uint, url string, r io.Reader) (string, error) {
