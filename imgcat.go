@@ -238,14 +238,7 @@ func svgToImage(width uint, height uint, url string, r io.Reader) (string, error
 	// https://stackoverflow.com/questions/42993407/how-to-create-and-export-svg-to-png-jpeg-in-golang
 	// Adapted to use size from SVG, and to use temp file.
 
-	svgFilename := filepath.Base(url)
-	if svgFilename == "" || strings.Contains(svgFilename, "/") || strings.Contains(svgFilename, "\\") {
-		// TempFile() does not like path separators in the filename template.
-		// Should not happen, but use this as fallback just in case.
-		svgFilename = "image.svg"
-	}
-
-	tmpPngFile, err := ioutil.TempFile("", "*."+svgFilename+".png")
+	tmpPngFile, err := ioutil.TempFile("", "imgcat.*.png")
 	if err != nil {
 		return "", err
 	}
