@@ -276,14 +276,16 @@ func svgToImage(width uint, height uint, url string, r io.Reader) (string, error
 		return "", err
 	}
 	defer rPng.Close()
-	if !strings.HasSuffix(tmpPngPath, ".png") {
-		return "", fmt.Errorf("Unexpected temp PNG path: %s. Bailing out to avoid infinite loop.", tmpPngPath)
+
+	img, _, err := imageorient.Decode(rPng)
+	if err != nil {
+		return "", err
 	}
-	return readerToImage(width, height, tmpPngPath, rPng)
+	return imageToString(width, height, url, img)
 }
 
 func readerToImage(width uint, height uint, url string, r io.Reader) (string, error) {
-	if strings.HasSuffix(url, ".svg") {
+	if strings.HasSuffix(strings.ToLower(url), ".svg") {
 		return svgToImage(width, height, url, r)
 	}
 

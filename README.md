@@ -39,3 +39,7 @@ imgcat *.jpg
 ## gifs
 
 imgcat supports gifs and yes they will animate on your terminal. The quality of that animation seems largely dependant on your terminal. [Kitty](https://sw.kovidgoyal.net/kitty/#) runs them best. 
+
+## svgs
+
+imgcat has experimental svg support.
