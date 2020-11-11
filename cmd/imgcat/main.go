@@ -12,8 +12,9 @@ const usage = `imgcat [pattern|url]
 
 Examples:
     imgcat path/to/image.jpg
-    imgcat *.jpg
-    imgcat https://example.com/image.jpg`
+    imgcat *.jpg *.svg
+    imgcat https://example.com/image.jpg
+    imgcat https://dev.w3.org/SVG/tools/svgweb/samples/svg-files/couch.svg`
 
 func main() {
 	if len(os.Args) == 1 {
