@@ -6,8 +6,10 @@ import (
 	"image"
 	"image/gif"
 	_ "image/jpeg"
+	"image/png"
 	_ "image/png"
 	"io"
+	"io/ioutil"
 	"mime"
 	"net/http"
 	"os"
@@ -20,6 +22,10 @@ import (
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/muesli/termenv"
 	"github.com/nfnt/resize"
+
+	// SVG support
+	"github.com/srwiley/oksvg"
+	"github.com/srwiley/rasterx"
 )
 
 const sparkles = "✨"
@@ -227,7 +233,55 @@ func load(url string) tea.Cmd {
 	}
 }
 
+func svgToImage(width uint, height uint, url string, r io.Reader) (string, error) {
+	// Original author: https://stackoverflow.com/users/10826783/usual-human
+	// https://stackoverflow.com/questions/42993407/how-to-create-and-export-svg-to-png-jpeg-in-golang
+	// Adapted to use size from SVG, and to use temp file.
+
+	tmpPngFile, err := ioutil.TempFile("", "imgcat.*.png")
+	if err != nil {
+		return "", err
+	}
+	tmpPngPath := tmpPngFile.Name()
+	defer os.Remove(tmpPngPath)
+	defer tmpPngFile.Close()
+
+	// Rasterize the SVG:
+	icon, err := oksvg.ReadIconStream(r)
+	if err != nil {
+		return "", err
+	}
+	w := int(icon.ViewBox.W)
+	h := int(icon.ViewBox.H)
+	icon.SetTarget(0, 0, float64(w), float64(h))
+	rgba := image.NewRGBA(image.Rect(0, 0, w, h))
+	icon.Draw(rasterx.NewDasher(w, h, rasterx.NewScannerGV(w, h, rgba, rgba.Bounds())), 1)
+	// Write rasterized image as PNG:
+	err = png.Encode(tmpPngFile, rgba)
+	if err != nil {
+		tmpPngFile.Close()
+		return "", err
+	}
+	tmpPngFile.Close()
+
+	rPng, err := os.Open(tmpPngPath)
+	if err != nil {
+		return "", err
+	}
+	defer rPng.Close()
+
+	img, _, err := imageorient.Decode(rPng)
+	if err != nil {
+		return "", err
+	}
+	return imageToString(width, height, url, img)
+}
+
 func readerToImage(width uint, height uint, url string, r io.Reader) (string, error) {
+	if strings.HasSuffix(strings.ToLower(url), ".svg") {
+		return svgToImage(width, height, url, r)
+	}
+
 	img, _, err := imageorient.Decode(r)
 	if err != nil {
 		return "", err
