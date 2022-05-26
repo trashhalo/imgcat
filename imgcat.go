@@ -5,7 +5,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
-	"github.com/trashhalo/imgcat/pkg/image"
+	image "github.com/trashhalo/imgcat/component"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
